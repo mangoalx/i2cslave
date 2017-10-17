@@ -61,8 +61,9 @@ void loop() {
 
 #define RFU                     0x001F
 
-const byte defaultReg[REG_MAP_SIZE] = {0x0,0x0,      //config
-                                       0x0,0x0,      //Tupper
+const byte defaultReg[REG_MAP_SIZE] = {0x0,0x1F,      //RFU
+                                       0x0,0x0,       //config
+                                       0x0,0x0,       //Tupper
                                        0x0,0x0,      //Tlower
                                        0x0,0x0,      //Tcrit
                                        0x0,0x0,      //Ta
@@ -71,7 +72,7 @@ const byte defaultReg[REG_MAP_SIZE] = {0x0,0x0,      //config
                                        0x03,0x0     //Resolution, 1 byte, fill 0 the last byte
 };
 
-                                       
+const byte TaRegister=5;             //no.5 register is Temperature ambient, will be used as default pointer value                                       
                                        
 
 /********* Global  Variables  ***********/
@@ -82,7 +83,7 @@ byte registerMapTemp[REG_MAP_SIZE];
 
 byte receivedCommands[MAX_SENT_BYTES];
 
-byte regPointer=5;                    //write only, to specify the register to access,default to Ta register
+byte regPointer=TaRegister;           //write only, to specify the register to access,default to Ta register
 byte dataReceived=0;                  //how many byte data received 
 
 #include "commandline.h"
