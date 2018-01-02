@@ -1,4 +1,4 @@
-#include <HardWire.h>
+//#include <HardWire.h>
 
 /*
 #include <Wire.h>
@@ -29,7 +29,7 @@ void loop() {
 
  
 
-//#include <Wire.h>
+#include <Wire.h>
 
  
 /*******************************************************************
@@ -110,7 +110,7 @@ void setup()
   for(byte i=0;i<REG_MAP_SIZE;i++)         //copy deault data into registers
     registerMap[i]=defaultReg[i];
 
-  Wire.begin(SLAVE_ADDRESS,HARD_WIRE_MODE); 
+  Wire.begin(SLAVE_ADDRESS); 
 #ifdef SLAVE_MASK
   TWAMR = SLAVE_MASK;
 #endif                                      //if SLAVE_MASK is defined, it should be written to TWAMR
@@ -119,7 +119,7 @@ void setup()
 
   Wire.onReceive(receiveEvent);
 
-  Wire.onRequestData(requestData);          // New from hardwire library, when was read by master, return a byte
+//  Wire.onRequestData(requestData);          // New from hardwire library, when was read by master, return a byte
   
 
 }
@@ -140,16 +140,16 @@ void requestEvent()
 
 {
 
-//  Wire.write(registerMap, 2);   //Send 2 bytes data only
+  Wire.write(registerMap+regPointer*2, 2);   //Send 2 bytes data only
 
 }
 
  
 //This handler for slave was read by master, and return a byte data to be send
-byte requestData(void)
-{
-  return registerMap[mapPointer++];
-}
+//byte requestData(void)
+//{
+//  return registerMap[mapPointer++];
+//}
 
 
 //This handler needs to short, cause it hold the i2c until quit
