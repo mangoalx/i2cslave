@@ -30,7 +30,7 @@ void loop() {
  
 
 #include <Wire.h>
-
+//#include <HardWire.h>
  
 /*******************************************************************
  * MCP9808 Register map
@@ -156,8 +156,8 @@ void requestEvent()
 void receiveEvent(int bytesReceived)
 
 {
-  LED_ON();
-  /*
+  //LED_ON();
+  
   //if only 1 byte is received, it is register address, put it into register pointer
   if(bytesReceived==1) regPointer=Wire.read();
 
@@ -175,7 +175,7 @@ void receiveEvent(int bytesReceived)
       dataReceived = 0;                         //clear dataReceived, no more process is needed
     }
   }
-  */
+ 
 }
 
 void processDataReceved(void)
