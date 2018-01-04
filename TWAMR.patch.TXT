@@ -1,0 +1,203 @@
+diff --git a/src/Wire.cpp b/src/Wire.cpp
+index d2146f7..c3f90eb 100644
+--- a/src/Wire.cpp
++++ b/src/Wire.cpp
+@@ -40,8 +40,9 @@ uint8_t TwoWire::txBufferIndex = 0;
+ uint8_t TwoWire::txBufferLength = 0;
+ 
+ uint8_t TwoWire::transmitting = 0;
+-void (*TwoWire::user_onRequest)(void);
+-void (*TwoWire::user_onReceive)(int);
++
++void (*TwoWire::user_onRequest)(uint8_t);
++void (*TwoWire::user_onReceive)(int,uint8_t);
+ 
+ // Constructors ////////////////////////////////////////////////////////////////
+ 
+@@ -273,7 +274,7 @@ void TwoWire::flush(void)
+ }
+ 
+ // behind the scenes function that is called when data is received
+-void TwoWire::onReceiveService(uint8_t* inBytes, int numBytes)
++void TwoWire::onReceiveService(uint8_t* inBytes, int numBytes, uint8_t slaaddr)
+ {
+   // don't bother if user hasn't registered a callback
+   if(!user_onReceive){
+@@ -294,11 +295,11 @@ void TwoWire::onReceiveService(uint8_t* inBytes, int numBytes)
+   rxBufferIndex = 0;
+   rxBufferLength = numBytes;
+   // alert user program
+-  user_onReceive(numBytes);
++  user_onReceive(numBytes, slaaddr);
+ }
+ 
+ // behind the scenes function that is called when data is requested
+-void TwoWire::onRequestService(void)
++void TwoWire::onRequestService(uint8_t slaaddr)
+ {
+   // don't bother if user hasn't registered a callback
+   if(!user_onRequest){
+@@ -309,21 +310,22 @@ void TwoWire::onRequestService(void)
+   txBufferIndex = 0;
+   txBufferLength = 0;
+   // alert user program
+-  user_onRequest();
++  user_onRequest(slaaddr);
+ }
+ 
+ // sets function called on slave write
+-void TwoWire::onReceive( void (*function)(int) )
++void TwoWire::onReceive( void (*function)(int, uint8_t) )
+ {
+   user_onReceive = function;
+ }
+ 
+ // sets function called on slave read
+-void TwoWire::onRequest( void (*function)(void) )
++void TwoWire::onRequest( void (*function)(uint8_t) )
+ {
+   user_onRequest = function;
+ }
+ 
++
+ // Preinstantiate Objects //////////////////////////////////////////////////////
+ 
+ TwoWire Wire = TwoWire();
+diff --git a/src/Wire.h b/src/Wire.h
+index 702f37d..7b7c70f 100644
+--- a/src/Wire.h
++++ b/src/Wire.h
+@@ -43,10 +43,10 @@ class TwoWire : public Stream
+     static uint8_t txBufferLength;
+ 
+     static uint8_t transmitting;
+-    static void (*user_onRequest)(void);
+-    static void (*user_onReceive)(int);
+-    static void onRequestService(void);
+-    static void onReceiveService(uint8_t*, int);
++    static void (*user_onRequest)(uint8_t);
++    static void (*user_onReceive)(int, uint8_t);
++    static void onRequestService(uint8_t);
++    static void onReceiveService(uint8_t*, int, uint8_t);
+   public:
+     TwoWire();
+     void begin();
+@@ -69,8 +69,8 @@ class TwoWire : public Stream
+     virtual int read(void);
+     virtual int peek(void);
+     virtual void flush(void);
+-    void onReceive( void (*)(int) );
+-    void onRequest( void (*)(void) );
++    void onReceive( void (*)(int, uint8_t) );
++    void onRequest( void (*)(uint8_t) );
+ 
+     inline size_t write(unsigned long n) { return write((uint8_t)n); }
+     inline size_t write(long n) { return write((uint8_t)n); }
+diff --git a/src/utility/twi.c b/src/utility/twi.c
+index 171af73..5d4ee43 100644
+--- a/src/utility/twi.c
++++ b/src/utility/twi.c
+@@ -42,9 +42,10 @@ static volatile uint8_t twi_state;
+ static volatile uint8_t twi_slarw;
+ static volatile uint8_t twi_sendStop;			// should the transaction end with a stop
+ static volatile uint8_t twi_inRepStart;			// in the middle of a repeated start
++static volatile uint8_t twi_slaaddr;
+ 
+-static void (*twi_onSlaveTransmit)(void);
+-static void (*twi_onSlaveReceive)(uint8_t*, int);
++static void (*twi_onSlaveTransmit)(uint8_t);
++static void (*twi_onSlaveReceive)(uint8_t*, int, uint8_t);
+ 
+ static uint8_t twi_masterBuffer[TWI_BUFFER_LENGTH];
+ static volatile uint8_t twi_masterBufferIndex;
+@@ -117,6 +118,11 @@ void twi_setAddress(uint8_t address)
+   // set twi slave address (skip over TWGCE bit)
+   TWAR = address << 1;
+ }
++void twi_setMask(uint8_t mask)
++{
++  // set twi slave address mask 
++  TWAMR = mask << 1;
++}
+ 
+ /* 
+  * Function twi_setClock
+@@ -328,7 +334,7 @@ uint8_t twi_transmit(const uint8_t* data, uint8_t length)
+  * Input    function: callback function to use
+  * Output   none
+  */
+-void twi_attachSlaveRxEvent( void (*function)(uint8_t*, int) )
++void twi_attachSlaveRxEvent( void (*function)(uint8_t*, int, uint8_t) )
+ {
+   twi_onSlaveReceive = function;
+ }
+@@ -339,7 +345,7 @@ void twi_attachSlaveRxEvent( void (*function)(uint8_t*, int) )
+  * Input    function: callback function to use
+  * Output   none
+  */
+-void twi_attachSlaveTxEvent( void (*function)(void) )
++void twi_attachSlaveTxEvent( void (*function)(uint8_t) )
+ {
+   twi_onSlaveTransmit = function;
+ }
+@@ -474,9 +480,11 @@ ISR(TWI_vect)
+ 
+     // Slave Receiver
+     case TW_SR_SLA_ACK:   // addressed, returned ack
+-    case TW_SR_GCALL_ACK: // addressed generally, returned ack
++    case TW_SR_GCALL_ACK: // addressed generally, returned ack    
+     case TW_SR_ARB_LOST_SLA_ACK:   // lost arbitration, returned ack
+     case TW_SR_ARB_LOST_GCALL_ACK: // lost arbitration, returned ack
++      // save slave address
++      twi_slaaddr = TWDR >> 1;
+       // enter slave receiver mode
+       twi_state = TWI_SRX;
+       // indicate that rx buffer can be overwritten and ack
+@@ -503,7 +511,7 @@ ISR(TWI_vect)
+         twi_rxBuffer[twi_rxBufferIndex] = '\0';
+       }
+       // callback to user defined callback
+-      twi_onSlaveReceive(twi_rxBuffer, twi_rxBufferIndex);
++      twi_onSlaveReceive(twi_rxBuffer, twi_rxBufferIndex, twi_slaaddr);
+       // since we submit rx buffer to "wire" library, we can reset it
+       twi_rxBufferIndex = 0;
+       break;
+@@ -516,6 +524,8 @@ ISR(TWI_vect)
+     // Slave Transmitter
+     case TW_ST_SLA_ACK:          // addressed, returned ack
+     case TW_ST_ARB_LOST_SLA_ACK: // arbitration lost, returned ack
++      // save slave address
++      twi_slaaddr = TWDR >> 1;
+       // enter slave transmitter mode
+       twi_state = TWI_STX;
+       // ready the tx buffer index for iteration
+@@ -524,7 +534,7 @@ ISR(TWI_vect)
+       twi_txBufferLength = 0;
+       // request for txBuffer to be filled and length to be set
+       // note: user must call twi_transmit(bytes, length) to do this
+-      twi_onSlaveTransmit();
++      twi_onSlaveTransmit(twi_slaaddr);
+       // if they didn't change buffer & length, initialize it
+       if(0 == twi_txBufferLength){
+         twi_txBufferLength = 1;
+diff --git a/src/utility/twi.h b/src/utility/twi.h
+index d27325e..82b578b 100644
+--- a/src/utility/twi.h
++++ b/src/utility/twi.h
+@@ -40,13 +40,14 @@
+   
+   void twi_init(void);
+   void twi_disable(void);
++  void twi_setMask(uint8_t);
+   void twi_setAddress(uint8_t);
+   void twi_setFrequency(uint32_t);
+   uint8_t twi_readFrom(uint8_t, uint8_t*, uint8_t, uint8_t);
+   uint8_t twi_writeTo(uint8_t, uint8_t*, uint8_t, uint8_t, uint8_t);
+   uint8_t twi_transmit(const uint8_t*, uint8_t);
+-  void twi_attachSlaveRxEvent( void (*)(uint8_t*, int) );
+-  void twi_attachSlaveTxEvent( void (*)(void) );
++  void twi_attachSlaveRxEvent( void (*)(uint8_t*, int, uint8_t) );
++  void twi_attachSlaveTxEvent( void (*)(uint8_t) );
+   void twi_reply(uint8_t);
+   void twi_stop(void);
+   void twi_releaseBus(void);

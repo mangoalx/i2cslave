@@ -17,14 +17,15 @@ void loop() {
 
 
 /****************************************************************************************
- * Slave_Example.pde ----- Sample sketch for making an I2C Slave Device
- *
- * A sample sketch that shows the basic steps necessary to making
- * an I2C slave device using Arduino's Wire library.
- *
- *
- * Copyright (c) 2011, DSS Circuits, Inc.  http://www.dsscircuits.com
- *
+ * MCP9808 simulator with Arduino feather 32u4
+ *          by John Xu, Videri
+ *          
+ * Version 0.1
+ *    - Basic version
+ *    - I2C slave device 
+ *    - Command line allow setting values and changing I2C address
+ *    - Support repeat-start reading (write 1 byte register No. then restart to read data), new wire library
+ * 
  ***************************************************************************************/
 
  
@@ -54,7 +55,7 @@ void loop() {
 #define  SLAVE_ADDRESS           0x1C  //slave address,any number from 0x01 to 0x7F
 #define  SLAVE_MASK              0x4   //This value is put in TWAMR, the bit will be ignored, so 0x1E will also
                                         //be accepted as slave address (shifted left for 1 so it is 4 instead of 2)
-
+//twi_slaaddr = TWDR >> 1;
 #define  REG_MAP_SIZE            18     //9 registers of 2 bytes data, last one Resolution is single byte, check later
 
 #define  MAX_SENT_BYTES          3      //3 bytes can be written in - reg address, 2 bytes of data maximum

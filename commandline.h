@@ -222,6 +222,7 @@ void setaddrCommand(){
 //  ina219.setAddress((uint8_t)addr);
   Serial.print("Set to new address: 0x");
   Serial.println(addr,HEX);
+  Wire.begin(addr);                               // To change the slave address, re-run begin with new address
   
 }
 
