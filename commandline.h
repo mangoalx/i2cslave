@@ -24,8 +24,6 @@ const char *delimiters            = ", \n";                    //commands can be
    Add your commands prototype here
 ***************************************************/
 void helpCommand(void);
-void ledonCommand(void);
-void ledoffCommand(void);
 void ledCommand(void);
 void setaddrCommand(void);
 void setbinCommand(void);
@@ -33,13 +31,13 @@ void setvalCommand(void);
 void nullCommand(void);
 void listCommand(void);
 void getvalCommand(void);
+
+void updateValue(int val,byte reg);
 /*************************************************************************************************************
      your Command Names Here
 */
 void (*g_pFunctionCmd[])(void)  =  {
   helpCommand,
-  ledonCommand,
-  ledoffCommand,
   ledCommand,
   setbinCommand,
   setvalCommand,
@@ -53,8 +51,6 @@ void (*g_pFunctionCmd[])(void)  =  {
 
 const char *Commandlist[] = {
   "help",
-  "ledon",                        //these led commands for debug 
-  "ledoff",
   "led",
 
   "setbin",                       //set register value in binary, can access full register map
@@ -68,8 +64,6 @@ const char *Commandlist[] = {
 const char *CommandHelp[] = {
   "help [command] - to see the help about using command \n command list:",
 //  "command list:",
-  "ledon - to turn on LED",
-  "ledoff - to turn off LED",
   "led <0/1> - to turn off/on LED",
   "setbin <regAddr> byte0 byte1 ... - fill the registers with data byte0, byte1 ... starting from regAddr, data in HEX format",
   "setval <decVal> [regAddr] - set the temperature registers (2,3,4,5) with the decimal value",
@@ -203,12 +197,6 @@ void helpCommand(){
       Serial.println(Commandlist[i]);                             //if not specified which command to help,list all commands
 }
 
-void ledonCommand() {
-  LED_ON();
-}
-void ledoffCommand() {
-  LED_OFF();
-}
 void ledCommand() {
   int firstOperand = readNumber();
   if (firstOperand == 0)
@@ -243,7 +231,6 @@ void setbinCommand(){
  * if register not exists, by default use 5 (Ta)
  ******************************************************/
 void setvalCommand(){
-  byte UpperByte,LowerByte;
   byte regAddr;
   int Temperature;
 
@@ -257,19 +244,22 @@ void setvalCommand(){
   if((regAddr<2)||(regAddr>5)) {
     Serial.println("out of range,valid range is 2 to 5");
   }
-  else {
-    UpperByte=0;
-    if(Temperature<0) {
-      UpperByte = 0x10;
-      Temperature=Temperature&0xFF;
-    }
-    UpperByte|=(Temperature/16)&0x0F;
-    LowerByte=(Temperature*16)&0xF0;
+  else updateValue(Temperature,regAddr);
+}
 
-    registerMap[regAddr*2]=UpperByte;
-    registerMap[regAddr*2+1]=LowerByte;
+void updateValue(int val,byte reg){
+  byte UpperByte,LowerByte;
+  UpperByte=0;
+  if(val<0) {
+    UpperByte = 0x10;
+    val=val&0xFF;
   }
+  UpperByte|=(val/16)&0x0F;
+  LowerByte=(val*16)&0xF0;
 
+  registerMap[reg*2]=UpperByte;
+  registerMap[reg*2+1]=LowerByte;
+  
 }
 
 // list command to print out full register map in HEX

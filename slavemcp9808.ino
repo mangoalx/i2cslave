@@ -19,13 +19,22 @@ void loop() {
 /****************************************************************************************
  * MCP9808 simulator with Arduino feather 32u4
  *          by John Xu, Videri
- *          
+ *    * To be done      
+ *    + To be tested
+ *    - Done
+ *    
  * Version 0.1
  *    - Basic version
  *    - I2C slave device 
  *    - Command line allow setting values and changing I2C address
  *    - Support repeat-start reading (write 1 byte register No. then restart to read data), new wire library
- * 
+ * Version 0.2
+ *    - Analog input to adjust value
+ *    - Check address pins to learn I2C slave address
+ *    * If received setval then stop using analog input to set value until analog input changed.
+ *    - Remove definition of slave address mask
+ *    - Remove LEDON LEDOFF command
+ *   
  ***************************************************************************************/
 
  
@@ -52,8 +61,17 @@ void loop() {
 //#define  UseInterrupt
 //#define  INTERRUPT_PIN           2      //I don't need this pin 
 
-#define  SLAVE_ADDRESS           0x1C  //slave address,any number from 0x01 to 0x7F
-#define  SLAVE_MASK              0x4   //This value is put in TWAMR, the bit will be ignored, so 0x1E will also
+#define DEFAULT_ADDRESS 0x18      //MCP9808 default address (A2, A1, A0 pulled down)
+#define ADDRESS_A0 6
+#define ADDRESS_A1 9
+#define ADDRESS_A2 10
+
+#define ANALOGINPIN A0
+
+//#define ALERT 5
+
+//#define  SLAVE_ADDRESS           0x1C  //slave address,any number from 0x01 to 0x7F
+//#define  SLAVE_MASK              0x4   //This value is put in TWAMR, the bit will be ignored, so 0x1E will also
                                         //be accepted as slave address (shifted left for 1 so it is 4 instead of 2)
 //twi_slaaddr = TWDR >> 1;
 #define  REG_MAP_SIZE            18     //9 registers of 2 bytes data, last one Resolution is single byte, check later
@@ -91,12 +109,20 @@ byte receivedCommands[MAX_SENT_BYTES];
 byte regPointer=TaRegister;           //write only, to specify the register to access,default to Ta register
 byte dataReceived=0;                  //how many byte data received 
 byte mapPointer=2*regPointer;         //index for registerMap
+byte slaveAddress=0x1c;
+
+int sensorValue=0;                    //Sensor read value
+int mappedValue=0;                    //Map sensor value to temperature value, 0-1023 to -100 ~ 250
 
 #include "commandline.h"
 
 void setup()
 
 {
+  Serial.begin(115200);
+
+//  while (!Serial);
+// Should not wait for serial, it will stuck here until we setup a serial connection
 
 #ifdef UseInterrupt
 
@@ -111,7 +137,20 @@ void setup()
   for(byte i=0;i<REG_MAP_SIZE;i++)         //copy deault data into registers
     registerMap[i]=defaultReg[i];
 
-  Wire.begin(SLAVE_ADDRESS); 
+//Check address pins to decide which address should be taken
+  pinMode(ADDRESS_A2, INPUT_PULLUP);       //For address control A2,A1,A0, pull-down on the TSB, so keep them high-impedance
+  pinMode(ADDRESS_A1, INPUT_PULLUP);
+  pinMode(ADDRESS_A0, INPUT_PULLUP);
+
+  slaveAddress=DEFAULT_ADDRESS;             //Base address is 0x18
+  if(digitalRead(ADDRESS_A2)) slaveAddress+=4;
+  if(digitalRead(ADDRESS_A1)) slaveAddress+=2;
+  if(digitalRead(ADDRESS_A0)) slaveAddress+=1;
+
+  Serial.print("Using I2C slave address:0x");
+  Serial.println(slaveAddress,HEX);
+
+  Wire.begin(slaveAddress); 
 #ifdef SLAVE_MASK
   TWAMR = SLAVE_MASK;
 #endif                                      //if SLAVE_MASK is defined, it should be written to TWAMR
@@ -133,7 +172,11 @@ void loop()
   processDataReceved();               //Check if we received data to be written to registers
   if(getCommandLineFromSerialPort(CommandLine))      //global CommandLine is defined in CommandLine.h
       DoMyCommand(CommandLine);
-  delay(1);  
+  sensorValue = analogRead(ANALOGINPIN);
+  mappedValue = map(sensorValue,0,1023,-50,200);
+  updateValue(mappedValue,TaRegister);
+//  Serial.println(mappedValue);
+  delay(500);                       //delay 100ms
 
 }
 //This handler needs to be short,there is just several uS to get ready for sending data. Maybe it holds the scl if not ready
@@ -153,7 +196,7 @@ void requestEvent()
 //}
 
 
-//This handler needs to short, cause it hold the i2c until quit
+//This handler needs to be short, cause it hold the i2c until quit
 void receiveEvent(int bytesReceived)
 
 {
