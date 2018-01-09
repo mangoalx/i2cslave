@@ -31,10 +31,14 @@ void loop() {
  * Version 0.2
  *    - Analog input to adjust value
  *    - Check address pins to learn I2C slave address
- *    * If received setval then stop using analog input to set value until analog input changed.
  *    - Remove definition of slave address mask
  *    - Remove LEDON LEDOFF command
- *   
+ * Version 0.21  
+ *    - Use F() macro for constant strings used in print function
+ *    - Use PROGMEM for constant string arrays to put them in flash instead of in RAM
+ *    - If received setval then stop using analog input to set value until analog input changed enough.
+ *    * Allow value with fraction
+ *    * Compare and set bit flag for upper/lower limit and critical value (full mcp9808 function)
  ***************************************************************************************/
 
  
@@ -96,8 +100,13 @@ const byte defaultReg[REG_MAP_SIZE] = {0x0,0x1F,      //RFU
 };
 
 const byte TaRegister=5;             //no.5 register is Temperature ambient, will be used as default pointer value                                       
+const byte TupperReg=2;
+const byte TlowerReg=3;
+const byte TcritReg=4;
                                        
-
+#define OutTcritFlag 0x80
+#define OutTupperFlag 0x40
+#define OutTlowerFlag 0x20
 /********* Global  Variables  ***********/
 
 byte registerMap[REG_MAP_SIZE];
@@ -113,6 +122,10 @@ byte slaveAddress=0x1c;
 
 int sensorValue=0;                    //Sensor read value
 int mappedValue=0;                    //Map sensor value to temperature value, 0-1023 to -100 ~ 250
+
+int sensorValueOld=0;
+bool autoUpdateVal=true;
+#define MINSENSORDIFF 20              //If user has set the value with setval command, the autoUpdate of value will be disabled, until you adjust the potentiometer big enough
 
 #include "commandline.h"
 
@@ -147,7 +160,7 @@ void setup()
   if(digitalRead(ADDRESS_A1)) slaveAddress+=2;
   if(digitalRead(ADDRESS_A0)) slaveAddress+=1;
 
-  Serial.print("Using I2C slave address:0x");
+  Serial.print(F("Using I2C slave address:0x"));
   Serial.println(slaveAddress,HEX);
 
   Wire.begin(slaveAddress); 
@@ -173,8 +186,14 @@ void loop()
   if(getCommandLineFromSerialPort(CommandLine))      //global CommandLine is defined in CommandLine.h
       DoMyCommand(CommandLine);
   sensorValue = analogRead(ANALOGINPIN);
-  mappedValue = map(sensorValue,0,1023,-50,200);
-  updateValue(mappedValue,TaRegister);
+
+//When user changed the value by sending command setval, the autoUpdateVal will be disabled. When the sensorValue changed big enough, re-enable autoUpdateVal
+  if(autoUpdateVal || (abs(sensorValue-sensorValueOld) > MINSENSORDIFF)){
+    sensorValueOld=sensorValue;     //Update sensorValueOld
+    autoUpdateVal=true;             //Enable autoUpdateVal
+    mappedValue = map(sensorValue,0,1023,-50,200);
+    updateValue(mappedValue,TaRegister);
+  }
 //  Serial.println(mappedValue);
   delay(500);                       //delay 100ms
 

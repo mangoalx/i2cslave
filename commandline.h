@@ -5,7 +5,11 @@
 
 #include "debug.h"
 
-//this following macro is good for debugging, e.g.  print2("myVar= ", myVar);
+#define HELPTEXTINPROGMEM
+// To put command help text strings to progmem, to save ram space
+
+
+//this following macro is good for debugging, e.g.  +2("myVar= ", myVar);
 #define print2(x,y) (Serial.print(x), Serial.println(y))
 #define ARRAY_LENGTH(array) (sizeof((array))/sizeof((array)[0]))    //This is used to decide the length of an array
 
@@ -15,7 +19,7 @@
 #define NULLCHAR '\0'
 #define SPACE ' '
 
-#define COMMAND_BUFFER_LENGTH        25                        //length of serial buffer for incoming commands
+#define COMMAND_BUFFER_LENGTH        64                        //length of serial buffer for incoming commands
 char   CommandLine[COMMAND_BUFFER_LENGTH + 1];                 //Read commands into this buffer from Serial.  +1 in length for a termination char
 bool nullToken=true;                                           //Mark end of the commandline when calling readnum, readhex,readword
 const char *delimiters            = ", \n";                    //commands can be separated by return, space or comma
@@ -32,7 +36,11 @@ void nullCommand(void);
 void listCommand(void);
 void getvalCommand(void);
 
+/***************************************************
+ *  Other functions
+ **************************************************/
 void updateValue(int val,byte reg);
+bool compareValue(byte reg,byte TaUpperByte,byte TaLowerByte);              //Compare Ta value against this register value, return true if exceeded
 /*************************************************************************************************************
      your Command Names Here
 */
@@ -61,8 +69,42 @@ const char *Commandlist[] = {
   "getval"
 };
 
-const char *CommandHelp[] = {
-  "help [command] - to see the help about using command \n command list:",
+#ifdef HELPTEXTINPROGMEM
+// Command help text strings, use PROGMEM to keep them in flash instead of in ram.
+const char helpText[] PROGMEM = {"help [command] - to see the help about using command \r\n command list:"};
+const char ledText[] PROGMEM = {"led <0/1> - to turn off/on LED"};
+const char setbinText[] PROGMEM = {"setbin <regAddr> byte0 byte1 ... - fill the registers with data byte0, byte1 ... starting from regAddr, data in HEX format"};
+const char setvalText[] PROGMEM = {"setval <decVal> [regAddr] - set the temperature registers (2,3,4,5) with the decimal value"};
+const char setaddrText[] PROGMEM = {"setaddr <addr> - set the slave device's address with addr (in HEX format)"};
+const char listText[] PROGMEM = {"list - list the registers content in HEX format"};
+const char getvalText[] PROGMEM = {"getval [regAddr] - read the temperature registers (2,3,4,5) in decimal format"};
+const char nullText[] PROGMEM = {"unknown command - use help without a parameter to see the valid command list"};
+
+void serialProgmemPrint(char *textp){
+  char myChar,k;
+  for (k = 0; k < strlen_P(textp); k++)
+  {
+    myChar =  pgm_read_byte_near(textp + k);
+    Serial.print(myChar);
+  }
+}
+void serialProgmemPrintln(char *textp){
+  serialProgmemPrint(textp);
+  Serial.println();
+}
+const char* const CommandHelp[] = {
+  helpText,
+  ledText,
+  setbinText,
+  setvalText,
+  setaddrText,
+  listText,
+  getvalText,
+  nullText  
+};
+#else
+const char* const CommandHelp[] = {
+  "help [command] - to see the help about using command \r\nCommand list:",
 //  "command list:",
   "led <0/1> - to turn off/on LED",
   "setbin <regAddr> byte0 byte1 ... - fill the registers with data byte0, byte1 ... starting from regAddr, data in HEX format",
@@ -72,6 +114,8 @@ const char *CommandHelp[] = {
   "getval [regAddr] - read the temperature registers (2,3,4,5) in decimal format",
   "unknown command - use help without a parameter to see the valid command list"
 };
+#endif
+
 
 const int CommandLength = ARRAY_LENGTH(Commandlist);
 /*************************************************************************************************************
@@ -149,7 +193,7 @@ char * readWord() {
 
 void
 nullCommand(void) {
-  Serial.println("Command not found... use help to see the command list");      //
+  Serial.println(F("Command not found... use help to see the command list"));      //
 }
 
 //This is used to print hex data with leading 0 if it is only 1 digit
@@ -190,8 +234,11 @@ void helpCommand(){
     for(i=0;i<CommandLength;i++)
       if (strcmp(pcCmd, Commandlist[i]) == 0)                    //find out the command number corresponding the parameter,
         break;                                                   //if not found, use nullCommand number, if no parameter, use 0 (for help command)
-
+#ifdef HELPTEXTINPROGMEM
+  serialProgmemPrintln(CommandHelp[i]);
+#else
   Serial.println(CommandHelp[i]);                                 //print help text 
+#endif
   if(i==0)
     for(int i=0;i<CommandLength;i++)
       Serial.println(Commandlist[i]);                             //if not specified which command to help,list all commands
@@ -208,7 +255,7 @@ void setaddrCommand(){
   byte addr;
   addr = readHex();
 //  ina219.setAddress((uint8_t)addr);
-  Serial.print("Set to new address: 0x");
+  Serial.print(F("Set to new address: 0x"));
   Serial.println(addr,HEX);
   Wire.begin(addr);                               // To change the slave address, re-run begin with new address
   
@@ -236,30 +283,19 @@ void setvalCommand(){
 
   Temperature=readNumber();
   if((nullToken)||(Temperature>255)||(Temperature<-100)){
-    Serial.println("Temperature out of range,valid range is -100 to 255");
+    Serial.println(F("Temperature out of range,valid range is -100 to 255"));
     return;
   }
   regAddr = readHex();
   if(nullToken) regAddr = TaRegister;            //if ommitted,read Ta register 
   if((regAddr<2)||(regAddr>5)) {
-    Serial.println("out of range,valid range is 2 to 5");
+    Serial.println(F("out of range,valid range is 2 to 5"));
   }
-  else updateValue(Temperature,regAddr);
-}
-
-void updateValue(int val,byte reg){
-  byte UpperByte,LowerByte;
-  UpperByte=0;
-  if(val<0) {
-    UpperByte = 0x10;
-    val=val&0xFF;
+  else {
+    updateValue(Temperature,regAddr);
+    if(regAddr == TaRegister)                     //If setting Ta value, disable autoUpdating of value from analog input
+      autoUpdateVal=false;
   }
-  UpperByte|=(val/16)&0x0F;
-  LowerByte=(val*16)&0xF0;
-
-  registerMap[reg*2]=UpperByte;
-  registerMap[reg*2+1]=LowerByte;
-  
 }
 
 // list command to print out full register map in HEX
@@ -278,7 +314,7 @@ void getvalCommand(void){
 
   if(nullToken) regAddr = TaRegister;            //if ommitted,read Ta register 
   if((regAddr<2)||(regAddr>5)) {
-    Serial.println("out of range,valid range is 2 to 5");
+    Serial.println(F("out of range,valid range is 2 to 5"));
   }
   else {
     
@@ -294,8 +330,71 @@ void getvalCommand(void){
     }else
       Temperature = (UpperByte * 16 + LowerByte / 16);
 
-    Serial.print("The value is: ");
+    Serial.print(F("The value is: "));
     Serial.println(Temperature);
+  }
+}
+/*
+const byte TaRegister=5;             //no.5 register is Temperature ambient, will be used as default pointer value                                       
+const byte TupperReg=2;
+const byte TlowerReg=3;
+const byte TcritReg=4;
+                                       
+#define OutTcritFlag 0x80
+#define OutTupperFlag 0x40
+#define OutTlowerFlag 0x20
+*/
+void updateValue(int val,byte reg){
+  byte UpperByte,LowerByte;
+  UpperByte=0;
+  if(val<0) {
+    UpperByte = 0x10;
+    val=val&0xFF;
+  }
+  UpperByte|=(val/16)&0x0F;
+  LowerByte=(val*16)&0xF0;
+
+  if(reg==TaRegister){              //If updating Ta, check the flags
+    if(compareValue(TcritReg,UpperByte,LowerByte)) UpperByte|=OutTcritFlag;
+    if(compareValue(TupperReg,UpperByte,LowerByte)) UpperByte|=OutTupperFlag;
+    if(!compareValue(TlowerReg,UpperByte,LowerByte)) UpperByte|=OutTlowerFlag;      //Here should be lower than, anyway in compareValue() it returns false when Ta<=Tlower.
+                                                                //So, when Ta=Tlower the flag will be set. Think nobody cares this
+  }
+  
+  registerMap[reg*2]=UpperByte;
+  registerMap[reg*2+1]=LowerByte;
+  
+}
+
+/****************************************************
+ * Compare Ta temperture value against 1 of the registers
+ *  TupperLimit, TlowerLimit, Tcritical
+ *  return true if Ta if greater
+*****************************************************/
+
+bool compareValue(byte reg,byte TaUpperByte,byte TaLowerByte){
+  byte UpperByte,LowerByte;
+
+  UpperByte=registerMap[reg*2];
+  LowerByte=registerMap[reg*2+1];
+
+  //Step 1, compare the sign bit
+  if(((TaUpperByte^UpperByte)&0x10)==0x10)      //Is the sign different?
+  {
+    if((TaUpperByte&0x10)==0x10) return false;  //If so, if Ta<0 then Ta is the less one
+    else return true;
+  }
+  else                                  //So the signs are the same, just compare upper then lower byte
+  {
+    TaUpperByte &= 0x0F;                //Clear any flag or sign bits
+    UpperByte &= 0x0F;
+    if(TaUpperByte>UpperByte) return true;
+    else if(TaUpperByte<UpperByte) return false;
+    else                                //Equal, then compare lower byte
+    {
+      if(TaLowerByte>LowerByte) return true;
+      else return false;
+    }
   }
 }
 /* This is the sample code from data sheet of MCP9808
