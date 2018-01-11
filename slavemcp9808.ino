@@ -1,20 +1,3 @@
-//#include <HardWire.h>
-
-/*
-#include <Wire.h>
-#include <TinyWireM.h>
-#include <USI_TWI_Master.h>
-
-void setup() {
-  // put your setup code here, to run once:
-
-}
-
-void loop() {
-  // put your main code here, to run repeatedly:
-
-}*/
-
 
 /****************************************************************************************
  * MCP9808 simulator with Arduino feather 32u4
@@ -37,8 +20,11 @@ void loop() {
  *    - Use F() macro for constant strings used in print function
  *    - Use PROGMEM for constant string arrays to put them in flash instead of in RAM
  *    - If received setval then stop using analog input to set value until analog input changed enough.
- *    * Allow value with fraction
- *    * Compare and set bit flag for upper/lower limit and critical value (full mcp9808 function)
+ *    - Allow value with fraction
+ *    - Compare and set bit flag for upper/lower limit and critical value (full mcp9808 function)
+ * Next Version
+ *    * output alert signal
+ *    * update slave address dynamically, like a real sensor does
  ***************************************************************************************/
 
  
@@ -191,10 +177,15 @@ void loop()
   if(autoUpdateVal || (abs(sensorValue-sensorValueOld) > MINSENSORDIFF)){
     sensorValueOld=sensorValue;     //Update sensorValueOld
     autoUpdateVal=true;             //Enable autoUpdateVal
+#ifdef VALUEFRACTION
+    mappedValue = map(sensorValue,0,1023,-50*16,200*16);            //To support fraction, data transferred to updateValue should be multiplied by 16
+#else
     mappedValue = map(sensorValue,0,1023,-50,200);
+#endif
     updateValue(mappedValue,TaRegister);
   }
-//  Serial.println(mappedValue);
+//  Serial.println(sensorValue);
+//debug  Serial.println(mappedValue);
   delay(500);                       //delay 100ms
 
 }

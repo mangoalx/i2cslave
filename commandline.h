@@ -8,6 +8,8 @@
 #define HELPTEXTINPROGMEM
 // To put command help text strings to progmem, to save ram space
 
+#define VALUEFRACTION
+// With this defined, the temperature value generated from potentiometer can contain fraction part. Setval command still can only use integar
 
 //this following macro is good for debugging, e.g.  +2("myVar= ", myVar);
 #define print2(x,y) (Serial.print(x), Serial.println(y))
@@ -116,6 +118,16 @@ const char* const CommandHelp[] = {
 };
 #endif
 
+#ifdef VALUEFRACTION
+//  #ifdef HELPTEXTINPROGMEM
+  
+//  #else
+    // .00 .0625 .125 .1875 .25 .3125 .375 .4375 .50 .5625 .625 .6875 .75 .8125 .875 .9375
+    const char* const Fraction4bit[] = {
+      ".00",".06",".13",".19",".25",".31",".38",".44",".50",".56",".63",".69",".75",".81",".88",".94"
+    };
+//  #endif
+#endif
 
 const int CommandLength = ARRAY_LENGTH(Commandlist);
 /*************************************************************************************************************
@@ -292,7 +304,11 @@ void setvalCommand(){
     Serial.println(F("out of range,valid range is 2 to 5"));
   }
   else {
+#ifdef VALUEFRACTION
+    updateValue(Temperature*16,regAddr);          //To support fraction (only for A/D data) it needs to be timesed by 16
+#else    
     updateValue(Temperature,regAddr);
+#endif
     if(regAddr == TaRegister)                     //If setting Ta value, disable autoUpdating of value from analog input
       autoUpdateVal=false;
   }
@@ -310,7 +326,7 @@ void listCommand(void){
 void getvalCommand(void){
   byte UpperByte,LowerByte;
   byte regAddr = readHex();
-  int Temperature;
+  int Temperature=0;
 
   if(nullToken) regAddr = TaRegister;            //if ommitted,read Ta register 
   if((regAddr<2)||(regAddr>5)) {
@@ -321,6 +337,19 @@ void getvalCommand(void){
     UpperByte=registerMap[regAddr*2];
     LowerByte=registerMap[regAddr*2+1];
 
+#ifdef VALUEFRACTION
+    if ((UpperByte & 0x10) == 0x10)
+      Temperature=-256*16;                            //T A < 0°C, 
+    UpperByte = UpperByte & 0x0F;                     //Clear Flags and sign
+
+    Temperature += UpperByte * 256 + LowerByte;
+
+    Serial.print(F("The value is: "));
+    Serial.print(Temperature/16);
+    LowerByte = Temperature & 0xF;
+    Serial.println(Fraction4bit[LowerByte]);
+    
+#else
     UpperByte = UpperByte & 0x1F; //Clear flag bits
     if ((UpperByte & 0x10) == 0x10){ //T A < 0°C
       UpperByte = UpperByte & 0x0F;                   //Clear SIGN
@@ -332,6 +361,7 @@ void getvalCommand(void){
 
     Serial.print(F("The value is: "));
     Serial.println(Temperature);
+#endif    
   }
 }
 /*
@@ -346,6 +376,12 @@ const byte TcritReg=4;
 */
 void updateValue(int val,byte reg){
   byte UpperByte,LowerByte;
+
+#ifdef VALUEFRACTION
+// When value fraction is enabled, the data val was multipled by 16
+  UpperByte = (val>>8)&0x1F;    // Now upper byte should be Val/256, and with 0x1F to keep sign flag
+  LowerByte = val&0xFF;         // lower byte is the lower byte of val
+#else
   UpperByte=0;
   if(val<0) {
     UpperByte = 0x10;
@@ -353,6 +389,7 @@ void updateValue(int val,byte reg){
   }
   UpperByte|=(val/16)&0x0F;
   LowerByte=(val*16)&0xF0;
+#endif
 
   if(reg==TaRegister){              //If updating Ta, check the flags
     if(compareValue(TcritReg,UpperByte,LowerByte)) UpperByte|=OutTcritFlag;
